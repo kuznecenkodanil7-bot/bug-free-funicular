@@ -18,7 +18,8 @@ public final class HudEditorScreen extends Screen {
     private int startY;
     private int startWidth;
     private int startHeight;
-    private float startScale;
+    private float startWidthScale;
+    private float startHeightScale;
     private double dragOffsetX;
     private double dragOffsetY;
     private long centeredAt;
@@ -31,11 +32,13 @@ public final class HudEditorScreen extends Screen {
     @Override
     protected void init() {
         openedAt = System.currentTimeMillis();
+        HudOverlay.setEditingSelected(false);
+        HudOverlay.setEditingInteraction(false);
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, width, height, UiTheme.argb(126, 3, 4, 7));
+        context.fill(0, 0, width, height, UiTheme.surface(UiTheme.argb(126, 3, 4, 7)));
         drawGuides(context);
 
         float progress = UiTheme.easeOutCubic(Math.min(1F, (System.currentTimeMillis() - openedAt) / 420F));
@@ -51,8 +54,8 @@ public final class HudEditorScreen extends Screen {
             String centered = "Панель отцентрирована";
             int w = UiTheme.textWidth(centered, 10F, true) + 34;
             int tx = (width - w) / 2;
-            UiTheme.roundedRect(context, tx, 40, w, 30, 10, UiTheme.accent());
-            UiTheme.roundedRect(context, tx + 2, 42, w - 4, 26, 8, UiTheme.PANEL_2);
+            UiTheme.roundedBorder(context, tx, 40, w, 30, 10, 1,
+                    UiTheme.withAlpha(UiTheme.accent(), 220), UiTheme.PANEL_2);
             UiTheme.icon(context, UiIcon.CENTER, tx + 9, 49, 14, UiTheme.accent());
             UiTheme.text(context, textRenderer, centered, tx + 29, 50, 10F, UiTheme.TEXT, true);
         }
@@ -69,7 +72,7 @@ public final class HudEditorScreen extends Screen {
 
         String hint = "Нажмите на меню, чтобы перейти в меню настроек";
         int hintW = UiTheme.textWidth(hint, 8.8F, false);
-        int alpha = hovered ? 155 : 62;
+        int alpha = hovered ? 150 : 55;
         UiTheme.text(context, textRenderer, hint, (width - hintW) / 2, logo.y() + logo.h() + 13,
                 8.8F, UiTheme.withAlpha(UiTheme.TEXT, alpha), false);
     }
@@ -91,8 +94,15 @@ public final class HudEditorScreen extends Screen {
         }
 
         HudOverlay.Layout layout = HudOverlay.layout(width, height);
-        HudOverlay.Edge edge = layout.edgeAt(click.x(), click.y());
-        if (edge == null) return false;
+        if (!layout.contains(click.x(), click.y()) && !isOnHandle(layout, click.x(), click.y())) {
+            HudOverlay.setEditingSelected(false);
+            return true;
+        }
+
+        boolean wasSelected = HudOverlay.isEditingSelected();
+        HudOverlay.setEditingSelected(true);
+        HudOverlay.Edge edge = wasSelected ? layout.edgeAt(click.x(), click.y()) : HudOverlay.Edge.MOVE;
+        if (edge == null) edge = HudOverlay.Edge.MOVE;
         dragEdge = edge;
         startMouseX = click.x();
         startMouseY = click.y();
@@ -100,11 +110,20 @@ public final class HudEditorScreen extends Screen {
         startY = layout.y();
         startWidth = layout.width();
         startHeight = layout.height();
-        startScale = RaidMineStaffMod.config().hudScale;
+        startWidthScale = RaidMineStaffMod.config().hudWidthScale;
+        startHeightScale = RaidMineStaffMod.config().hudHeightScale;
         dragOffsetX = click.x() - layout.x();
         dragOffsetY = click.y() - layout.y();
         HudOverlay.setEditingInteraction(true);
         return true;
+    }
+
+    private boolean isOnHandle(HudOverlay.Layout layout, double mouseX, double mouseY) {
+        if (!HudOverlay.isEditingSelected()) return false;
+        for (HudOverlay.Handle handle : layout.handles()) {
+            if (handle.rect().contains(mouseX, mouseY)) return true;
+        }
+        return false;
     }
 
     @Override
@@ -119,26 +138,33 @@ public final class HudEditorScreen extends Screen {
 
         double dx = click.x() - startMouseX;
         double dy = click.y() - startMouseY;
-        float horizontal = switch (dragEdge) {
+        boolean ctrl = isControlDown();
+
+        float widthDelta = switch (dragEdge) {
             case E, NE, SE -> (float) (dx / HudOverlay.BASE_WIDTH);
             case W, NW, SW -> (float) (-dx / HudOverlay.BASE_WIDTH);
             default -> 0F;
         };
-        float vertical = switch (dragEdge) {
-            case S, SE, SW -> (float) (dy / (HudOverlay.BASE_WIDTH * 0.62F));
-            case N, NE, NW -> (float) (-dy / (HudOverlay.BASE_WIDTH * 0.62F));
+        float heightDelta = switch (dragEdge) {
+            case S, SE, SW -> (float) (dy / HudOverlay.BASE_HEIGHT);
+            case N, NE, NW -> (float) (-dy / HudOverlay.BASE_HEIGHT);
             default -> 0F;
         };
-        float deltaScale;
-        if (horizontal != 0F && vertical != 0F) deltaScale = (horizontal + vertical) * 0.5F;
-        else deltaScale = horizontal != 0F ? horizontal : vertical;
 
-        HudOverlay.setScale(startScale + deltaScale);
+        if (ctrl) {
+            float uniform = Math.abs(widthDelta) >= Math.abs(heightDelta) ? widthDelta : heightDelta;
+            if (uniform == 0F) uniform = widthDelta != 0F ? widthDelta : heightDelta;
+            HudOverlay.setWidthScale(startWidthScale + uniform);
+            HudOverlay.setHeightScale(startHeightScale + uniform);
+        } else {
+            if (widthDelta != 0F) HudOverlay.setWidthScale(startWidthScale + widthDelta);
+            if (heightDelta != 0F) HudOverlay.setHeightScale(startHeightScale + heightDelta);
+        }
+
         HudOverlay.Layout resized = HudOverlay.layout(width, height);
-        boolean symmetric = isControlDown();
         int x = startX;
         int y = startY;
-        if (symmetric) {
+        if (ctrl) {
             x = startX + (startWidth - resized.width()) / 2;
             y = startY + (startHeight - resized.height()) / 2;
         } else {
@@ -166,7 +192,9 @@ public final class HudEditorScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         HudOverlay.Layout layout = HudOverlay.layout(width, height);
         if (!layout.contains(mouseX, mouseY)) return false;
-        HudOverlay.setScale(RaidMineStaffMod.config().hudScale + (verticalAmount > 0 ? 0.04F : -0.04F));
+        float delta = verticalAmount > 0 ? 0.04F : -0.04F;
+        HudOverlay.setWidthScale(RaidMineStaffMod.config().hudWidthScale + delta);
+        HudOverlay.setHeightScale(RaidMineStaffMod.config().hudHeightScale + delta);
         RaidMineStaffMod.config().save();
         return true;
     }
@@ -195,6 +223,7 @@ public final class HudEditorScreen extends Screen {
     @Override
     public void close() {
         HudOverlay.setEditingInteraction(false);
+        HudOverlay.setEditingSelected(false);
         RaidMineStaffMod.config().save();
         MinecraftClient.getInstance().setScreen(null);
     }
@@ -212,6 +241,8 @@ public final class HudEditorScreen extends Screen {
     }
 
     private record Rect(int x, int y, int w, int h) {
-        boolean contains(double mx, double my) { return mx >= x && mx < x + w && my >= y && my < y + h; }
+        boolean contains(double mx, double my) {
+            return mx >= x && mx < x + w && my >= y && my < y + h;
+        }
     }
 }

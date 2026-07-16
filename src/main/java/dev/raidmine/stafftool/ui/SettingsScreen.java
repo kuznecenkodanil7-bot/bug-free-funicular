@@ -3,6 +3,7 @@ package dev.raidmine.stafftool.ui;
 import dev.raidmine.stafftool.RaidMineStaffMod;
 import dev.raidmine.stafftool.config.ForbiddenWordsStore;
 import dev.raidmine.stafftool.config.ModConfig;
+import dev.raidmine.stafftool.util.FolderOpener;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -13,7 +14,6 @@ import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import java.awt.Desktop;
 import java.util.List;
 import java.util.Locale;
 
@@ -28,8 +28,12 @@ public final class SettingsScreen extends Screen {
             0xFFFFD24A, 0xFFFF8A00,
             0xFFF5F7FA, 0xFF9AA4B2
     };
-    private static final String[] FONT_VALUES = {"AUTO", "Segoe UI", "Inter", "Noto Sans", "Roboto", "Arial"};
-    private static final String[] FONT_LABELS = {"Авто", "Segoe UI", "Inter", "Noto Sans", "Roboto", "Arial"};
+    private static final String[] FONT_VALUES = {
+            "AUTO", "ETUDE_NOIRE", "SEENONIM", "MINECRAFT"
+    };
+    private static final String[] FONT_LABELS = {
+            "Авто — Hemico", "Etude Noire", "Seenonim", "Minecraft Pixel"
+    };
 
     private final Screen parent;
     private Tab tab = Tab.APPEARANCE;
@@ -39,6 +43,7 @@ public final class SettingsScreen extends Screen {
     private int wordOffset;
     private String status;
     private long statusAt;
+    private DragTarget dragTarget = DragTarget.NONE;
 
     public SettingsScreen(Screen parent) {
         super(Text.literal("RM Tools — настройки"));
@@ -65,11 +70,18 @@ public final class SettingsScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fillGradient(0, 0, width, height, UiTheme.argb(238, 3, 4, 7), UiTheme.argb(248, 11, 12, 16));
+        context.fillGradient(0, 0, width, height,
+                UiTheme.surface(UiTheme.argb(238, 3, 4, 7)),
+                UiTheme.surface(UiTheme.argb(248, 11, 12, 16)));
         Layout l = layout();
         UiTheme.shadow(context, l.x(), l.y(), l.w(), l.h(), 20);
-        UiTheme.roundedRect(context, l.x(), l.y(), l.w(), l.h(), 20, UiTheme.accent());
-        UiTheme.roundedRect(context, l.x() + 2, l.y() + 2, l.w() - 4, l.h() - 4, 18, UiTheme.BG);
+        int uiOutlineAlpha = Math.round(255F * RaidMineStaffMod.config().uiOutlineOpacity);
+        if (uiOutlineAlpha > 0) {
+            UiTheme.roundedBorder(context, l.x(), l.y(), l.w(), l.h(), 20, 2,
+                    UiTheme.withAlpha(UiTheme.accent(), uiOutlineAlpha), UiTheme.BG);
+        } else {
+            UiTheme.roundedRect(context, l.x(), l.y(), l.w(), l.h(), 20, UiTheme.BG);
+        }
 
         renderHeader(context, l, mouseX, mouseY);
         renderTabs(context, l, mouseX, mouseY);
@@ -114,15 +126,16 @@ public final class SettingsScreen extends Screen {
         int contentW = l.w() - 40;
         int leftW = (contentW - 14) / 2;
         int rightX = contentX + leftW + 14;
-        card(context, contentX, contentY, leftW, l.h() - 146, "Цвет интерфейса", UiIcon.PALETTE);
-        card(context, rightX, contentY, leftW, l.h() - 146, "Шрифт интерфейса", UiIcon.FONT);
+        int cardH = l.h() - 146;
+        card(context, contentX, contentY, leftW, cardH, "Цвет и прозрачность", UiIcon.PALETTE);
+        card(context, rightX, contentY, leftW, cardH, "Шрифт интерфейса", UiIcon.FONT);
 
         UiTheme.text(context, textRenderer, "Готовые темы", contentX + 18, contentY + 46, 9.3F, UiTheme.MUTED, false);
         for (int i = 0; i < PRESETS.length / 2; i++) {
             Rect r = presetRect(contentX, contentY, i);
             int primary = PRESETS[i * 2];
             int secondary = PRESETS[i * 2 + 1];
-            UiTheme.roundedRect(context, r.x(), r.y(), r.w(), r.h(), 10, primary);
+            UiTheme.roundedRectExact(context, r.x(), r.y(), r.w(), r.h(), 10, primary);
             context.fillGradient(r.x() + r.w() / 2, r.y(), r.x() + r.w(), r.y() + r.h(), primary, secondary);
             if ((RaidMineStaffMod.config().accentColor & 0xFFFFFF) == (primary & 0xFFFFFF)) {
                 UiTheme.icon(context, UiIcon.CHECK, r.x() + (r.w() - 14) / 2, r.y() + (r.h() - 14) / 2, 14, UiTheme.TEXT);
@@ -137,18 +150,53 @@ public final class SettingsScreen extends Screen {
         Rect apply = new Rect(contentX + leftW - 58, fieldY, 40, 28);
         button(context, apply, "OK", apply.contains(mouseX, mouseY), true, UiIcon.CHECK);
 
-        UiTheme.text(context, textRenderer, "Текущий шрифт: " + SmoothAssets.fontName(), rightX + 18, contentY + 46, 9.2F, UiTheme.MUTED, false);
+        renderSlider(context, "Прозрачность фона", backgroundOpacityTrackRect(contentX, contentY, leftW),
+                RaidMineStaffMod.config().uiBackgroundOpacity);
+        renderSlider(context, "Прозрачность обводки меню", uiOutlineOpacityTrackRect(contentX, contentY, leftW),
+                RaidMineStaffMod.config().uiOutlineOpacity);
+
+        Rect outline = hudOutlineToggleRect(contentX, contentY, leftW);
+        toggle(context, outline, "Обводка верхней панели",
+                RaidMineStaffMod.config().hudOutlineEnabled, mouseX, mouseY, UiIcon.RESIZE);
+        if (RaidMineStaffMod.config().hudOutlineEnabled) {
+            renderSlider(context, "Прозрачность обводки панели", hudOutlineOpacityTrackRect(contentX, contentY, leftW),
+                    RaidMineStaffMod.config().hudOutlineOpacity);
+        } else {
+            UiTheme.text(context, textRenderer, "Ползунок появится после включения обводки.",
+                    contentX + 18, outline.y() + 42, 8.2F, UiTheme.FAINT, false);
+        }
+
+        String activeFont = RaidMineStaffMod.config().fontFamily.equalsIgnoreCase("MINECRAFT")
+                ? "Minecraft Pixel" : SmoothAssets.fontName();
+        UiTheme.text(context, textRenderer, "Текущий: " + activeFont, rightX + 18, contentY + 46, 9.2F, UiTheme.MUTED, false);
         for (int i = 0; i < FONT_VALUES.length; i++) {
             Rect r = fontRect(rightX, contentY, leftW, i);
             boolean selected = RaidMineStaffMod.config().fontFamily.equalsIgnoreCase(FONT_VALUES[i]);
             UiTheme.roundedRect(context, r.x(), r.y(), r.w(), r.h(), 10,
-                    selected ? UiTheme.withAlpha(UiTheme.accent(), 74) : r.contains(mouseX, mouseY) ? UiTheme.CARD_HOVER : UiTheme.CARD);
-            UiTheme.icon(context, UiIcon.FONT, r.x() + 10, r.y() + 9, 14, selected ? UiTheme.accent() : UiTheme.FAINT);
-            UiTheme.text(context, textRenderer, FONT_LABELS[i], r.x() + 34, r.y() + 10, 9.2F,
+                    selected ? UiTheme.withAlpha(UiTheme.accent(), 74)
+                            : r.contains(mouseX, mouseY) ? UiTheme.CARD_HOVER : UiTheme.CARD);
+            UiTheme.icon(context, UiIcon.FONT, r.x() + 10, r.y() + 9, 14,
+                    selected ? UiTheme.accent() : UiTheme.FAINT);
+            UiTheme.text(context, textRenderer, FONT_LABELS[i], r.x() + 34, r.y() + 10, 9.0F,
                     selected ? UiTheme.TEXT : UiTheme.MUTED, true);
         }
-        UiTheme.text(context, textRenderer, "Шрифт меняется сразу. Если выбранного семейства нет в системе,", rightX + 18, contentY + 194, 8.2F, UiTheme.FAINT, false);
-        UiTheme.text(context, textRenderer, "RM Tools автоматически использует ближайший доступный вариант.", rightX + 18, contentY + 208, 8.2F, UiTheme.FAINT, false);
+        int infoY = contentY + 66 + ((FONT_VALUES.length + 1) / 2) * 42 + 14;
+        UiTheme.text(context, textRenderer, "AUTO использует Hemico. RaidMine Tools всегда остаётся в Hemico.",
+                rightX + 18, infoY, 8.2F, UiTheme.FAINT, false);
+        UiTheme.text(context, textRenderer, "Шрифты загружены как крупные сглаженные атласы без размытия.",
+                rightX + 18, infoY + 15, 8.2F, UiTheme.FAINT, false);
+    }
+
+    private void renderSlider(DrawContext context, String label, Rect track, float value) {
+        UiTheme.text(context, textRenderer, label, track.x(), track.y() - 24, 9.1F, UiTheme.MUTED, false);
+        UiTheme.roundedRect(context, track.x(), track.y(), track.w(), track.h(), 4, UiTheme.argb(190, 48, 52, 62));
+        int fillW = Math.round(track.w() * Math.max(0F, Math.min(1F, value)));
+        if (fillW > 0) UiTheme.roundedRectExact(context, track.x(), track.y(), fillW, track.h(), 4, UiTheme.accent());
+        int knobX = track.x() + fillW - 5;
+        knobX = Math.max(track.x() - 1, Math.min(track.x() + track.w() - 9, knobX));
+        UiTheme.roundedRectExact(context, knobX, track.y() - 4, 10, 16, 5, UiTheme.TEXT);
+        String percent = Math.round(value * 100F) + "%";
+        UiTheme.text(context, textRenderer, percent, track.x() + track.w() + 10, track.y() - 1, 9F, UiTheme.TEXT, true);
     }
 
     private void renderModeration(DrawContext context, Layout l, int mouseX, int mouseY) {
@@ -194,7 +242,7 @@ public final class SettingsScreen extends Screen {
         reasonField.setWidth(half - 36);
         input(context, reasonField, "{rule} — только пункт правил");
         UiTheme.text(context, textRenderer, "AFK Kick работает только в мультиплеере и отправляет в /hub", rightX + 18, y + 207, 8.2F, UiTheme.FAINT, false);
-        UiTheme.text(context, textRenderer, "через случайные 4:30–4:50 бездействия.", rightX + 18, y + 221, 8.2F, UiTheme.FAINT, false);
+        UiTheme.text(context, textRenderer, "ровно через 4 минуты. После 1 минуты AFK онлайн не считается.", rightX + 18, y + 221, 8.2F, UiTheme.FAINT, false);
     }
 
     private void renderWords(DrawContext context, Layout l, int mouseX, int mouseY) {
@@ -204,7 +252,7 @@ public final class SettingsScreen extends Screen {
         int h = l.h() - 146;
         card(context, x, y, w, h, "Запрещённые слова", UiIcon.WARN);
         UiTheme.text(context, textRenderer,
-                "Список хранится отдельно в config/rm-tools/forbidden-words.json — им можно делиться с другими модераторами.",
+                "Список хранится отдельно в config/rm_tools/forbidden_words.json — им можно делиться с другими модераторами.",
                 x + 18, y + 43, 8.8F, UiTheme.MUTED, false);
 
         wordField.setX(x + 18);
@@ -317,6 +365,30 @@ public final class SettingsScreen extends Screen {
             }
             Rect apply = new Rect(x + leftW - 58, y + 154, 40, 28);
             if (apply.contains(mx, my)) { applyHex(); return true; }
+            Rect backgroundTrack = backgroundOpacityTrackRect(x, y, leftW);
+            if (backgroundTrack.contains(mx, my)) {
+                dragTarget = DragTarget.BACKGROUND;
+                setSliderFromMouse(mx, backgroundTrack, dragTarget);
+                return true;
+            }
+            Rect uiOutlineTrack = uiOutlineOpacityTrackRect(x, y, leftW);
+            if (uiOutlineTrack.contains(mx, my)) {
+                dragTarget = DragTarget.UI_OUTLINE;
+                setSliderFromMouse(mx, uiOutlineTrack, dragTarget);
+                return true;
+            }
+            Rect outline = hudOutlineToggleRect(x, y, leftW);
+            if (outline.contains(mx, my)) {
+                RaidMineStaffMod.config().hudOutlineEnabled ^= true;
+                save(RaidMineStaffMod.config().hudOutlineEnabled ? "Обводка панели включена" : "Обводка панели выключена");
+                return true;
+            }
+            Rect hudOutlineTrack = hudOutlineOpacityTrackRect(x, y, leftW);
+            if (RaidMineStaffMod.config().hudOutlineEnabled && hudOutlineTrack.contains(mx, my)) {
+                dragTarget = DragTarget.HUD_OUTLINE;
+                setSliderFromMouse(mx, hudOutlineTrack, dragTarget);
+                return true;
+            }
             int rightX = x + leftW + 14;
             for (int i = 0; i < FONT_VALUES.length; i++) {
                 if (fontRect(rightX, y, leftW, i).contains(mx, my)) {
@@ -379,6 +451,36 @@ public final class SettingsScreen extends Screen {
     }
 
     @Override
+    public boolean mouseDragged(Click click, double offsetX, double offsetY) {
+        if (dragTarget != DragTarget.NONE && tab == Tab.APPEARANCE) {
+            Layout l = layout();
+            int x = l.x() + 20;
+            int y = l.y() + 118;
+            int leftW = ((l.w() - 40) - 14) / 2;
+            Rect track = switch (dragTarget) {
+                case BACKGROUND -> backgroundOpacityTrackRect(x, y, leftW);
+                case UI_OUTLINE -> uiOutlineOpacityTrackRect(x, y, leftW);
+                case HUD_OUTLINE -> hudOutlineOpacityTrackRect(x, y, leftW);
+                case NONE -> backgroundOpacityTrackRect(x, y, leftW);
+            };
+            setSliderFromMouse(click.x(), track, dragTarget);
+            return true;
+        }
+        return super.mouseDragged(click, offsetX, offsetY);
+    }
+
+    @Override
+    public boolean mouseReleased(Click click) {
+        if (dragTarget != DragTarget.NONE) {
+            dragTarget = DragTarget.NONE;
+            RaidMineStaffMod.config().save();
+            showStatus("Прозрачность сохранена");
+            return true;
+        }
+        return super.mouseReleased(click);
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (tab != Tab.WORDS) return false;
         Layout l = layout();
@@ -427,13 +529,18 @@ public final class SettingsScreen extends Screen {
     }
 
     private void openWordsFolder() {
-        try {
-            java.nio.file.Files.createDirectories(ForbiddenWordsStore.directory());
-            if (!Desktop.isDesktopSupported()) throw new IllegalStateException("Desktop API недоступен");
-            Desktop.getDesktop().open(ForbiddenWordsStore.directory().toFile());
-            showStatus("Папка открыта");
-        } catch (Exception exception) {
-            showStatus("Не удалось открыть папку: " + exception.getMessage());
+        FolderOpener.Result result = FolderOpener.open(ForbiddenWordsStore.directory());
+        showStatus(result.message());
+    }
+
+    private void setSliderFromMouse(double mouseX, Rect track, DragTarget target) {
+        float value = (float) ((mouseX - track.x()) / Math.max(1.0, track.w()));
+        value = Math.max(0F, Math.min(1F, value));
+        switch (target) {
+            case BACKGROUND -> RaidMineStaffMod.config().uiBackgroundOpacity = value;
+            case UI_OUTLINE -> RaidMineStaffMod.config().uiOutlineOpacity = value;
+            case HUD_OUTLINE -> RaidMineStaffMod.config().hudOutlineOpacity = value;
+            case NONE -> { }
         }
     }
 
@@ -516,7 +623,21 @@ public final class SettingsScreen extends Screen {
         int w = (width - 46) / 2;
         return new Rect(x + 18 + column * (w + 10), y + 66 + row * 42, w, 32);
     }
+    private Rect backgroundOpacityTrackRect(int x, int y, int width) {
+        return new Rect(x + 18, y + 232, Math.max(120, width - 92), 8);
+    }
+    private Rect uiOutlineOpacityTrackRect(int x, int y, int width) {
+        return new Rect(x + 18, y + 286, Math.max(120, width - 92), 8);
+    }
+    private Rect hudOutlineToggleRect(int x, int y, int width) {
+        return new Rect(x + 18, y + 316, width - 36, 34);
+    }
+    private Rect hudOutlineOpacityTrackRect(int x, int y, int width) {
+        return new Rect(x + 18, y + 388, Math.max(120, width - 92), 8);
+    }
     private Rect removeRect(Rect row) { return new Rect(row.x() + row.w() - 30, row.y() + 1, 26, 24); }
+
+    private enum DragTarget { NONE, BACKGROUND, UI_OUTLINE, HUD_OUTLINE }
 
     private enum Tab {
         APPEARANCE("Интерфейс", UiIcon.PALETTE),

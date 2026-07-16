@@ -4,6 +4,7 @@ import dev.raidmine.stafftool.RaidMineStaffMod;
 import dev.raidmine.stafftool.ui.LoginScreen;
 import dev.raidmine.stafftool.util.AfkKickManager;
 import dev.raidmine.stafftool.util.AuthManager;
+import dev.raidmine.stafftool.util.ScreenshotService;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -26,8 +27,9 @@ public abstract class MinecraftClientMixin {
             return;
         }
         if (AuthManager.canUseMod()) {
-            RaidMineStaffMod.stats().tick(client);
             AfkKickManager.tick(client);
+            RaidMineStaffMod.stats().tick(client);
+            ScreenshotService.tick(client);
         }
     }
 }

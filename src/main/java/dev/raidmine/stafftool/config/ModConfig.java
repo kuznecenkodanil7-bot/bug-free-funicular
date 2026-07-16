@@ -19,13 +19,23 @@ import java.util.Map;
 
 public final class ModConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path PATH = FabricLoader.getInstance().getConfigDir().resolve("rm-tools.json");
-    private static final Path LEGACY_PATH = FabricLoader.getInstance().getConfigDir().resolve("raidmine-staff.json");
+    private static final Path DIRECTORY = FabricLoader.getInstance().getConfigDir().resolve("rm_tools");
+    private static final Path PATH = DIRECTORY.resolve("settings.json");
+    private static final List<Path> LEGACY_PATHS = List.of(
+            FabricLoader.getInstance().getConfigDir().resolve("rm-tools.json"),
+            FabricLoader.getInstance().getConfigDir().resolve("raidmine-staff.json")
+    );
 
     public boolean hudEnabled = true;
     public float hudX = 0.5F;
     public float hudY = 0.015F;
-    public float hudScale = 0.82F;
+    /** Legacy uniform scale retained for migration only. */
+    public float hudScale = 0.92F;
+    public float hudWidthScale = 0.90F;
+    public float hudHeightScale = 1.00F;
+    public boolean hudOutlineEnabled = false;
+    public float hudOutlineOpacity = 1.00F;
+    public float uiOutlineOpacity = 1.00F;
     public boolean requireConfirmation = true;
     public boolean restrictToRaidMine = true;
     public List<String> allowedAddressFragments = new ArrayList<>(List.of("raidmine"));
@@ -33,6 +43,7 @@ public final class ModConfig {
     public int accentColor = 0xFFFF8A00;
     public int accentColorSecondary = 0xFFFF4D3A;
     public String fontFamily = "AUTO";
+    public float uiBackgroundOpacity = 0.92F;
     public boolean autoScreenshot = true;
     public boolean mentionNotifications = true;
     public boolean forbiddenWordAlerts = true;
@@ -42,8 +53,9 @@ public final class ModConfig {
 
     public int dailyOnlineGoalMinutes = 120;
     public boolean afkKickEnabled = false;
-    public int afkKickMinSeconds = 270;
-    public int afkKickMaxSeconds = 290;
+    public int afkKickMinSeconds = 240;
+    public int afkKickMaxSeconds = 240;
+    public int afkOnlinePauseSeconds = 60;
 
     public String warnCommand = "warn {player} {reason}";
     public String muteCommand = "mute {player} {duration} {reason}";
@@ -52,6 +64,7 @@ public final class ModConfig {
     public String kickCommand = "kick {player} {reason}";
     public String staffChatCommand = "/sc {message}";
     public String vanishCommand = "/v";
+    public List<String> vanishCommandAliases = new ArrayList<>(List.of("v", "vanish", "cmi:v"));
     public String hubCommand = "/hub";
 
     public List<String> activeServerKeywords = new ArrayList<>(List.of(
@@ -66,10 +79,14 @@ public final class ModConfig {
             "xzktoV2_1", "111"
     ));
 
+    public static Path directory() {
+        return DIRECTORY;
+    }
+
     public static ModConfig load() {
-        Path source = Files.exists(PATH) ? PATH : LEGACY_PATH;
+        Path source = Files.exists(PATH) ? PATH : firstExistingLegacy();
         ModConfig loaded;
-        if (!Files.exists(source)) {
+        if (source == null) {
             loaded = new ModConfig();
         } else {
             try (Reader reader = Files.newBufferedReader(source)) {
@@ -86,10 +103,17 @@ public final class ModConfig {
         return loaded;
     }
 
+    private static Path firstExistingLegacy() {
+        for (Path legacy : LEGACY_PATHS) {
+            if (Files.exists(legacy)) return legacy;
+        }
+        return null;
+    }
+
     public void save() {
         normalize();
         try {
-            Files.createDirectories(PATH.getParent());
+            Files.createDirectories(DIRECTORY);
             try (Writer writer = Files.newBufferedWriter(PATH)) {
                 GSON.toJson(this, writer);
             }
@@ -116,19 +140,32 @@ public final class ModConfig {
     private void normalize() {
         hudX = clamp(hudX, 0F, 1F, 0.5F);
         hudY = clamp(hudY, 0F, 1F, 0.015F);
-        hudScale = clamp(hudScale, 0.55F, 1.65F, 0.82F);
+        hudScale = clamp(hudScale, 0.70F, 1.80F, 0.92F);
+        if (hudWidthScale <= 0F) hudWidthScale = hudScale;
+        if (hudHeightScale <= 0F) hudHeightScale = hudScale;
+        hudWidthScale = clamp(hudWidthScale, 0.72F, 1.80F, 0.90F);
+        hudHeightScale = clamp(hudHeightScale, 0.72F, 1.80F, 1.00F);
+        uiBackgroundOpacity = clamp(uiBackgroundOpacity, 0F, 1F, 0.92F);
+        uiOutlineOpacity = clamp(uiOutlineOpacity, 0F, 1F, 1F);
+        hudOutlineOpacity = clamp(hudOutlineOpacity, 0F, 1F, 1F);
         accentColor = 0xFF000000 | (accentColor & 0x00FFFFFF);
         accentColorSecondary = 0xFF000000 | (accentColorSecondary & 0x00FFFFFF);
         punishmentReasonTemplate = fallback(punishmentReasonTemplate, "{rule}");
-        fontFamily = fallback(fontFamily, "AUTO").toUpperCase(Locale.ROOT);
+        fontFamily = fallback(fontFamily, "AUTO");
         dailyOnlineGoalMinutes = Math.max(15, Math.min(720, dailyOnlineGoalMinutes));
-        afkKickMinSeconds = Math.max(120, Math.min(600, afkKickMinSeconds));
-        afkKickMaxSeconds = Math.max(afkKickMinSeconds, Math.min(600, afkKickMaxSeconds));
+        // RaidMine removes 15 minutes at the server-side 5 minute AFK kick.
+        // RM Tools always transfers to hub one minute earlier.
+        afkKickMinSeconds = 240;
+        afkKickMaxSeconds = 240;
+        afkOnlinePauseSeconds = Math.max(30, Math.min(180, afkOnlinePauseSeconds));
 
         if (allowedAddressFragments == null || allowedAddressFragments.isEmpty()) {
             allowedAddressFragments = new ArrayList<>(List.of("raidmine"));
         }
         if (forbiddenWords == null) forbiddenWords = new ArrayList<>();
+        if (vanishCommandAliases == null || vanishCommandAliases.isEmpty()) {
+            vanishCommandAliases = new ArrayList<>(List.of("v", "vanish", "cmi:v"));
+        }
         if (activeServerKeywords == null || activeServerKeywords.isEmpty()) {
             activeServerKeywords = new ArrayList<>(List.of("duels", "anarchy", "grief"));
         }
@@ -144,6 +181,7 @@ public final class ModConfig {
         forbiddenWords = normalizeList(forbiddenWords);
         activeServerKeywords = normalizeList(activeServerKeywords);
         pausedServerKeywords = normalizeList(pausedServerKeywords);
+        vanishCommandAliases = normalizeList(vanishCommandAliases);
         staffCredentials = normalizeMap(staffCredentials);
 
         warnCommand = fallback(warnCommand, "warn {player} {reason}");

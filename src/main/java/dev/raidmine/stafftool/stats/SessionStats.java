@@ -5,6 +5,7 @@ import dev.raidmine.stafftool.chat.ChatEventGate;
 import dev.raidmine.stafftool.chat.UiNotificationCenter;
 import dev.raidmine.stafftool.rules.PunishmentType;
 import dev.raidmine.stafftool.util.ServerGuard;
+import dev.raidmine.stafftool.util.AfkKickManager;
 import net.minecraft.client.MinecraftClient;
 
 import java.time.LocalDate;
@@ -47,7 +48,9 @@ public final class SessionStats {
                 && ServerGuard.isKnownActiveMode(client)) {
             forcedHubPause = false;
         }
-        active = !forcedHubPause && ServerGuard.isActivityCounted(client);
+        active = !forcedHubPause
+                && ServerGuard.isActivityCounted(client)
+                && !AfkKickManager.isOnlineTimerPaused();
         lastTickMillis = now;
 
         if (goalReached() && !state.goalNoticeShown) {
@@ -77,9 +80,11 @@ public final class SessionStats {
         String normalized = rawMessage.trim().toLowerCase(Locale.ROOT);
         if (!normalized.startsWith("/")) return;
         long now = System.currentTimeMillis();
+        if (normalized.equals(lastRecordedCommand) && now - lastRecordedCommandAt < 1500L) return;
+        lastRecordedCommand = normalized;
+        lastRecordedCommandAt = now;
 
         String hub = normalizeCommand(RaidMineStaffMod.config().hubCommand);
-        String vanish = normalizeCommand(RaidMineStaffMod.config().vanishCommand);
         if (startsWithCommand(normalized, hub)) {
             forcedHubPause = true;
             forcedHubPauseAt = now;
@@ -89,19 +94,25 @@ public final class SessionStats {
             forcedHubPause = false;
             forcedHubPauseAt = 0L;
         }
-        if (startsWithCommand(normalized, vanish)) {
+        if (isVanishCommand(normalized)) {
             vanished = !vanished;
             UiNotificationCenter.info("Ваниш", vanished ? "Режим невидимости включён" : "Режим невидимости выключен");
         }
 
-        if (normalized.equals(lastRecordedCommand) && now - lastRecordedCommandAt < 1500L) return;
         PunishmentType type = detectPunishment(normalized);
         if (type != null) {
             ChatEventGate.suppressMentions(3500L);
             record(type);
-            lastRecordedCommand = normalized;
-            lastRecordedCommandAt = now;
         }
+    }
+
+
+    private boolean isVanishCommand(String normalized) {
+        if (startsWithCommand(normalized, normalizeCommand(RaidMineStaffMod.config().vanishCommand))) return true;
+        for (String alias : RaidMineStaffMod.config().vanishCommandAliases) {
+            if (startsWithCommand(normalized, normalizeCommand(alias))) return true;
+        }
+        return false;
     }
 
     private PunishmentType detectPunishment(String normalized) {

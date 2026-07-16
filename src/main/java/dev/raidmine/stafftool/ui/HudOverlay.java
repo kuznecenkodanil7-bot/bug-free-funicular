@@ -10,12 +10,12 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 
 public final class HudOverlay {
-    public static final int BASE_WIDTH = 298;
-    public static final int BASE_HEIGHT = 38;
+    public static final int BASE_WIDTH = 282;
+    public static final int BASE_HEIGHT = 42;
     private static volatile boolean editingInteraction;
+    private static volatile boolean editingSelected;
 
-    private HudOverlay() {
-    }
+    private HudOverlay() { }
 
     public static void render(DrawContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
@@ -32,132 +32,210 @@ public final class HudOverlay {
         editingInteraction = interacting;
     }
 
+    public static void setEditingSelected(boolean selected) {
+        editingSelected = selected;
+        if (!selected) editingInteraction = false;
+    }
+
+    public static boolean isEditingSelected() {
+        return editingSelected;
+    }
+
     private static SessionStats renderInternal(DrawContext context, boolean editing) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.options.hudHidden || client.player == null || !RaidMineStaffMod.config().hudEnabled || !AuthManager.canUseMod()) {
+        if (client.options.hudHidden || client.player == null
+                || !RaidMineStaffMod.config().hudEnabled || !AuthManager.canUseMod()) {
             return null;
         }
 
         SessionStats stats = RaidMineStaffMod.stats();
-        Layout l = layout(client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
-        UiNotificationCenter.Notice notice = UiNotificationCenter.top();
-        if (notice != null && !editing) renderNoticeBar(context, l, notice);
-        else renderStatsBar(context, l, stats, editing);
+        Layout layout = layout(client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight());
+        UiNotificationCenter.Notice notice = editing ? null : UiNotificationCenter.top();
+        renderBar(context, layout, stats, notice, editing);
         return stats;
     }
 
-    private static void renderStatsBar(DrawContext context, Layout l, SessionStats stats, boolean editing) {
-        int border = stats.goalReached() ? UiTheme.SUCCESS : UiTheme.accent();
-        if (editing && editingInteraction) {
-            UiTheme.glow(context, l.x() - 1, l.y() - 1, l.width() + 2, l.height() + 2,
-                    Math.max(8, scale(11, l.scale())), border);
-        }
-        UiTheme.shadow(context, l.x(), l.y(), l.width(), l.height(), Math.max(7, scale(10, l.scale())));
-        UiTheme.roundedRect(context, l.x(), l.y(), l.width(), l.height(), Math.max(7, scale(10, l.scale())), border);
-        int inset = Math.max(2, scale(2, l.scale()));
-        UiTheme.roundedRect(context, l.x() + inset, l.y() + inset, l.width() - inset * 2, l.height() - inset * 2,
-                Math.max(6, scale(8, l.scale())), UiTheme.argb(250, 13, 15, 19));
-
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
-        int logoW = scale(30, l.scale());
-        int logoH = scale(30, l.scale());
-        int cursor = l.x() + scale(7, l.scale());
-        int logoY = l.y() + (l.height() - logoH) / 2;
-        UiTheme.logo(context, cursor, logoY, logoW, logoH, 255);
-        cursor += logoW + scale(5, l.scale());
-        UiTheme.text(context, tr, "RM", cursor, l.y() + scale(13, l.scale()),
-                Math.max(8F, 10.2F * l.scale()), UiTheme.TEXT, true);
-        cursor += scale(28, l.scale());
-        context.fill(cursor, l.y() + scale(7, l.scale()), cursor + 1,
-                l.y() + l.height() - scale(7, l.scale()), UiTheme.BORDER);
-        cursor += scale(5, l.scale());
-
-        cursor = verticalStat(context, tr, cursor, l, UiIcon.BAN, stats.bans(), UiTheme.DANGER,
-                Math.max(stats.pulse(PunishmentType.BAN), stats.pulse(PunishmentType.PERMANENT_BAN)));
-        cursor = verticalStat(context, tr, cursor, l, UiIcon.MUTE, stats.mutes(), UiTheme.WARNING,
-                stats.pulse(PunishmentType.MUTE));
-        cursor = verticalStat(context, tr, cursor, l, UiIcon.WARN, stats.warns(), UiTheme.accent(),
-                stats.pulse(PunishmentType.WARN));
-
-        int timeColor = stats.goalReached() ? UiTheme.SUCCESS : UiTheme.TEXT;
-        int timeBlockW = scale(67, l.scale());
-        UiTheme.roundedRect(context, cursor, l.y() + scale(4, l.scale()), timeBlockW, l.height() - scale(8, l.scale()),
-                Math.max(5, scale(7, l.scale())), UiTheme.argb(120, 31, 35, 44));
-        int clockSize = scale(12, l.scale());
-        UiTheme.icon(context, UiIcon.CLOCK, cursor + scale(6, l.scale()), l.y() + scale(13, l.scale()), clockSize, timeColor);
-        UiTheme.text(context, tr, formatTime(stats.elapsedSeconds()), cursor + scale(22, l.scale()),
-                l.y() + scale(13, l.scale()), Math.max(8F, 9.2F * l.scale()), timeColor, true);
-        cursor += timeBlockW + scale(4, l.scale());
-
-        int eyeSize = scale(18, l.scale());
-        int eyeColor = stats.isVanished() ? 0xFFB36BFF : UiTheme.argb(255, 68, 72, 82);
-        UiTheme.icon(context, UiIcon.EYE, cursor, l.y() + (l.height() - eyeSize) / 2, eyeSize, eyeColor);
-
-        if (editing) renderHandles(context, l, border);
-    }
-
-    private static int verticalStat(DrawContext context, TextRenderer tr, int x, Layout l,
-                                    UiIcon icon, int value, int accent, float pulse) {
-        int blockW = scale(32, l.scale());
-        int blockH = l.height() - scale(8, l.scale());
-        int y = l.y() + scale(4, l.scale());
-        int bg = pulse > 0F ? UiTheme.withAlpha(accent, 36 + Math.round(70F * pulse)) : UiTheme.argb(112, 31, 35, 44);
-        UiTheme.roundedRect(context, x, y, blockW, blockH, Math.max(5, scale(7, l.scale())), bg);
-        int iconSize = scale(12, l.scale());
-        UiTheme.icon(context, icon, x + (blockW - iconSize) / 2, y + scale(3, l.scale()), iconSize, accent);
-        String text = Integer.toString(value);
-        int textW = UiTheme.textWidth(text, Math.max(7F, 8.7F * l.scale()), true);
-        UiTheme.text(context, tr, text, x + (blockW - textW) / 2, y + scale(17, l.scale()),
-                Math.max(7F, 8.7F * l.scale()), UiTheme.TEXT, true);
-        return x + blockW + scale(3, l.scale());
-    }
-
-    private static void renderNoticeBar(DrawContext context, Layout l, UiNotificationCenter.Notice notice) {
-        float p = UiNotificationCenter.progress(notice);
-        int width = Math.max(scale(210, l.scale()), Math.round(l.width() * p));
-        int x = l.x() + (l.width() - width) / 2;
-        int y = l.y() - Math.round((1F - p) * scale(8, l.scale()));
-        int alpha = Math.round(245F * p);
-        int accent = switch (notice.kind()) {
-            case VIOLATION -> UiTheme.accent();
-            case MENTION -> 0xFFFFD24A;
+    private static void renderBar(DrawContext context, Layout l, SessionStats stats,
+                                  UiNotificationCenter.Notice notice, boolean editing) {
+        float transition = notice == null ? 0F : UiNotificationCenter.progress(notice);
+        int neutral = UiTheme.argb(247, 12, 14, 18);
+        int noticeAccent = notice == null ? UiTheme.accent() : switch (notice.kind()) {
+            case VIOLATION -> 0xFFFF6A2A;
+            case MENTION -> 0xFFFFB52E;
             case INFO -> UiTheme.SUCCESS;
         };
-        UiTheme.roundedRect(context, x, y, width, l.height(), Math.max(7, scale(10, l.scale())), UiTheme.withAlpha(accent, alpha));
-        UiTheme.roundedRect(context, x + 2, y + 2, width - 4, l.height() - 4, Math.max(6, scale(8, l.scale())),
-                UiTheme.withAlpha(UiTheme.PANEL_2, alpha));
+        int noticeSurface = UiTheme.withAlpha(UiTheme.blend(neutral, noticeAccent, 0.17F), 247);
+        int background = UiTheme.blend(neutral, noticeSurface, transition);
+        int border = stats.goalReached() && notice == null ? UiTheme.SUCCESS :
+                UiTheme.blend(UiTheme.accent(), noticeAccent, transition);
+        int radius = Math.max(13, l.height() / 2);
 
-        int iconSize = scale(15, l.scale());
-        int iconX = x + scale(9, l.scale());
-        UiTheme.icon(context, notice.kind() == UiNotificationCenter.Kind.INFO ? UiIcon.BELL : UiIcon.WARN,
-                iconX, y + (l.height() - iconSize) / 2, iconSize, UiTheme.withAlpha(accent, alpha));
-        int textX = iconX + iconSize + scale(7, l.scale());
-        UiTheme.text(context, MinecraftClient.getInstance().textRenderer,
-                UiTheme.ellipsize(MinecraftClient.getInstance().textRenderer, notice.title(), width - (textX - x) - 10),
-                textX, y + scale(7, l.scale()), Math.max(8F, 9.3F * l.scale()), UiTheme.withAlpha(UiTheme.TEXT, alpha), true);
-        UiTheme.text(context, MinecraftClient.getInstance().textRenderer,
-                UiTheme.ellipsize(MinecraftClient.getInstance().textRenderer, notice.message(), width - (textX - x) - 10),
-                textX, y + scale(21, l.scale()), Math.max(7F, 7.8F * l.scale()), UiTheme.withAlpha(UiTheme.MUTED, alpha), false);
+        if (RaidMineStaffMod.config().hudOutlineEnabled) {
+            int outlineAlpha = Math.round(255F * RaidMineStaffMod.config().hudOutlineOpacity);
+            int thickness = Math.max(1, Math.round(1.6F * l.contentScale()));
+            UiTheme.roundedBorder(context, l.x(), l.y(), l.width(), l.height(), radius,
+                    thickness, UiTheme.withAlpha(border, outlineAlpha), background);
+        } else {
+            UiTheme.roundedRect(context, l.x(), l.y(), l.width(), l.height(), radius, background);
+        }
+
+        if (editing && editingSelected) {
+            int alpha = editingInteraction ? 245 : 155;
+            UiTheme.roundedBorder(context, l.x() - 1, l.y() - 1, l.width() + 2, l.height() + 2,
+                    radius + 1, 1, UiTheme.withAlpha(UiTheme.accent(), alpha), UiTheme.withAlpha(background, 0));
+        }
+
+        if (notice == null) {
+            renderStatsContent(context, l, stats, 255, 0);
+        } else {
+            int oldAlpha = Math.round(255F * (1F - transition));
+            int newAlpha = Math.round(255F * transition);
+            renderStatsContent(context, l, stats, oldAlpha, -Math.round(7F * transition));
+            renderNoticeContent(context, l, notice, newAlpha, Math.round(7F * (1F - transition)), noticeAccent);
+        }
+
+        if (editing && editingSelected) renderHandles(context, l, UiTheme.accent());
+    }
+
+    private static void renderStatsContent(DrawContext context, Layout l, SessionStats stats,
+                                           int alpha, int yOffset) {
+        if (alpha <= 2) return;
+        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        float s = l.contentScale();
+        int yBase = l.y() + yOffset;
+        int cursor = l.x() + px(7, s);
+
+        int logoSize = px(28, s);
+        UiTheme.logo(context, cursor, yBase + (l.height() - logoSize) / 2, logoSize, logoSize, alpha);
+        cursor += logoSize + px(3, s);
+
+        float brandTop = Math.max(7.2F, 8.8F * s);
+        float brandBottom = Math.max(6.7F, 8.1F * s);
+        UiTheme.brandText(context, "RaidMine", cursor, yBase + px(8, s), brandTop,
+                UiTheme.withAlpha(UiTheme.TEXT, alpha));
+        UiTheme.brandText(context, "Tools", cursor, yBase + px(21, s), brandBottom,
+                UiTheme.withAlpha(UiTheme.MUTED, alpha));
+        cursor += px(48, s);
+
+        context.fill(cursor, yBase + px(7, s), cursor + 1,
+                yBase + l.height() - px(7, s), UiTheme.withAlpha(UiTheme.BORDER, Math.round(alpha * 0.42F)));
+        cursor += px(5, s);
+
+        cursor = verticalStat(context, tr, cursor, yBase, l, UiIcon.BAN, stats.bans(), UiTheme.DANGER,
+                Math.max(stats.pulse(PunishmentType.BAN), stats.pulse(PunishmentType.PERMANENT_BAN)), alpha);
+        cursor = verticalStat(context, tr, cursor, yBase, l, UiIcon.MUTE, stats.mutes(), UiTheme.WARNING,
+                stats.pulse(PunishmentType.MUTE), alpha);
+        cursor = verticalStat(context, tr, cursor, yBase, l, UiIcon.WARN, stats.warns(), UiTheme.accent(),
+                stats.pulse(PunishmentType.WARN), alpha);
+
+        int timeColor = stats.goalReached() ? UiTheme.SUCCESS : UiTheme.TEXT;
+        int timeW = px(57, s);
+        int blockH = Math.min(l.height() - px(8, s), px(32, s));
+        int blockY = yBase + (l.height() - blockH) / 2;
+        UiTheme.roundedRect(context, cursor, blockY, timeW, blockH,
+                Math.max(7, blockH / 3), UiTheme.withAlpha(UiTheme.argb(112, 31, 34, 42), alpha));
+        int clock = px(13, s);
+        int clockX = cursor + px(5, s);
+        int clockY = blockY + (blockH - clock) / 2;
+        UiTheme.icon(context, UiIcon.CLOCK, clockX, clockY, clock, UiTheme.withAlpha(timeColor, alpha));
+        String time = formatTime(stats.elapsedSeconds());
+        float timeSize = Math.max(7.3F, 8.8F * s);
+        int timeTextY = blockY + (blockH - Math.round(timeSize * 0.78F)) / 2 - 1;
+        UiTheme.text(context, tr, time, cursor + px(21, s), timeTextY,
+                timeSize, UiTheme.withAlpha(timeColor, alpha), true);
+        cursor += timeW + px(3, s);
+
+        int eyeBox = px(23, s);
+        int eyeY = yBase + (l.height() - eyeBox) / 2;
+        int neutralBg = UiTheme.withAlpha(UiTheme.argb(92, 32, 35, 43), alpha);
+        UiTheme.roundedRect(context, cursor, eyeY, eyeBox, eyeBox, Math.max(7, eyeBox / 3), neutralBg);
+        int eyeSize = px(14, s);
+        int eyeX = cursor + (eyeBox - eyeSize) / 2;
+        int eyeIconY = eyeY + (eyeBox - eyeSize) / 2;
+        if (stats.isVanished()) {
+            int glowAlpha = Math.round(alpha * 0.30F);
+            int glow = UiTheme.withAlpha(0xFFC06CFF, glowAlpha);
+            UiTheme.icon(context, UiIcon.EYE, eyeX - 1, eyeIconY, eyeSize, glow);
+            UiTheme.icon(context, UiIcon.EYE, eyeX + 1, eyeIconY, eyeSize, glow);
+            UiTheme.icon(context, UiIcon.EYE, eyeX, eyeIconY - 1, eyeSize, glow);
+            UiTheme.icon(context, UiIcon.EYE, eyeX, eyeIconY + 1, eyeSize, glow);
+            UiTheme.icon(context, UiIcon.EYE, eyeX, eyeIconY, eyeSize,
+                    UiTheme.withAlpha(0xFFC06CFF, alpha));
+        } else {
+            UiTheme.icon(context, UiIcon.EYE_OFF, eyeX, eyeIconY, eyeSize,
+                    UiTheme.withAlpha(UiTheme.argb(255, 73, 77, 88), alpha));
+        }
+    }
+
+    private static int verticalStat(DrawContext context, TextRenderer tr, int x, int yBase, Layout l,
+                                    UiIcon icon, int value, int accent, float pulse, int alpha) {
+        float s = l.contentScale();
+        int blockW = px(27, s);
+        int blockH = Math.min(l.height() - px(8, s), px(32, s));
+        int y = yBase + (l.height() - blockH) / 2;
+        int bgAlpha = pulse > 0F ? 46 + Math.round(58F * pulse) : 96;
+        bgAlpha = Math.round(bgAlpha * (alpha / 255F));
+        int bg = pulse > 0F ? UiTheme.withAlpha(accent, bgAlpha)
+                : UiTheme.argb(bgAlpha, 31, 34, 42);
+        UiTheme.roundedRect(context, x, y, blockW, blockH, Math.max(7, blockH / 3), bg);
+        int iconSize = px(12, s);
+        int iconX = x + (blockW - iconSize) / 2;
+        int iconY = y + px(3, s);
+        UiTheme.icon(context, icon, iconX, iconY, iconSize, UiTheme.withAlpha(accent, alpha));
+        String number = Integer.toString(value);
+        float numberSize = Math.max(6.8F, 8.0F * s);
+        int textW = UiTheme.textWidth(number, numberSize, true);
+        int textY = y + blockH - px(11, s);
+        UiTheme.text(context, tr, number, x + (blockW - textW) / 2, textY,
+                numberSize, UiTheme.withAlpha(UiTheme.TEXT, alpha), true);
+        return x + blockW + px(3, s);
+    }
+
+    private static void renderNoticeContent(DrawContext context, Layout l,
+                                            UiNotificationCenter.Notice notice,
+                                            int alpha, int yOffset, int accent) {
+        if (alpha <= 2) return;
+        float s = l.contentScale();
+        int y = l.y() + yOffset;
+        int iconSize = px(19, s);
+        int iconX = l.x() + px(11, s);
+        int iconY = y + (l.height() - iconSize) / 2;
+        UiIcon icon = notice.kind() == UiNotificationCenter.Kind.MENTION ? UiIcon.BELL :
+                notice.kind() == UiNotificationCenter.Kind.VIOLATION ? UiIcon.WARN : UiIcon.CHECK;
+        UiTheme.icon(context, icon, iconX, iconY, iconSize, UiTheme.withAlpha(accent, alpha));
+        int textX = iconX + iconSize + px(8, s);
+        int maxWidth = l.x() + l.width() - textX - px(10, s);
+        String title = UiTheme.ellipsize(MinecraftClient.getInstance().textRenderer, notice.title(), maxWidth);
+        String message = UiTheme.ellipsize(MinecraftClient.getInstance().textRenderer, notice.message(), maxWidth);
+        UiTheme.text(context, MinecraftClient.getInstance().textRenderer, title,
+                textX, y + px(8, s), Math.max(7.7F, 9.1F * s),
+                UiTheme.withAlpha(UiTheme.TEXT, alpha), true);
+        UiTheme.text(context, MinecraftClient.getInstance().textRenderer, message,
+                textX, y + px(22, s), Math.max(6.7F, 7.8F * s),
+                UiTheme.withAlpha(UiTheme.MUTED, alpha), false);
     }
 
     private static void renderHandles(DrawContext context, Layout l, int color) {
         for (Handle handle : l.handles()) {
             Rect r = handle.rect();
-            UiTheme.roundedRect(context, r.x(), r.y(), r.w(), r.h(), Math.max(3, r.w() / 2), color);
+            UiTheme.roundedRectExact(context, r.x(), r.y(), r.w(), r.h(),
+                    Math.max(3, r.w() / 2), UiTheme.withAlpha(color, 245));
         }
     }
 
     public static Layout layout(int screenWidth, int screenHeight) {
-        float scale = RaidMineStaffMod.config().hudScale;
-        int width = Math.max(164, Math.round(BASE_WIDTH * scale));
-        int height = Math.max(26, Math.round(BASE_HEIGHT * scale));
+        float widthScale = RaidMineStaffMod.config().hudWidthScale;
+        float heightScale = RaidMineStaffMod.config().hudHeightScale;
+        int width = Math.max(244, Math.round(BASE_WIDTH * widthScale));
+        int height = Math.max(34, Math.round(BASE_HEIGHT * heightScale));
         int availableX = Math.max(0, screenWidth - width);
         int availableY = Math.max(0, screenHeight - height);
         int x = Math.round(availableX * RaidMineStaffMod.config().hudX);
         int y = Math.round(availableY * RaidMineStaffMod.config().hudY);
         x = Math.max(0, Math.min(availableX, x));
         y = Math.max(0, Math.min(availableY, y));
-        return new Layout(x, y, width, height, scale);
+        float contentScale = Math.max(0.72F, Math.min(width / (float) BASE_WIDTH, height / (float) BASE_HEIGHT));
+        return new Layout(x, y, width, height, widthScale, heightScale, contentScale);
     }
 
     public static void setPosition(int screenWidth, int screenHeight, int x, int y) {
@@ -174,8 +252,17 @@ public final class HudOverlay {
         RaidMineStaffMod.config().save();
     }
 
+    public static void setWidthScale(float scale) {
+        RaidMineStaffMod.config().hudWidthScale = Math.max(0.72F, Math.min(1.80F, scale));
+    }
+
+    public static void setHeightScale(float scale) {
+        RaidMineStaffMod.config().hudHeightScale = Math.max(0.72F, Math.min(1.80F, scale));
+    }
+
     public static void setScale(float scale) {
-        RaidMineStaffMod.config().hudScale = Math.max(0.55F, Math.min(1.65F, scale));
+        setWidthScale(scale);
+        setHeightScale(scale);
     }
 
     public static void centerTop() {
@@ -187,30 +274,34 @@ public final class HudOverlay {
     public static void reset() {
         RaidMineStaffMod.config().hudX = 0.5F;
         RaidMineStaffMod.config().hudY = 0.015F;
-        RaidMineStaffMod.config().hudScale = 0.82F;
+        RaidMineStaffMod.config().hudWidthScale = 0.90F;
+        RaidMineStaffMod.config().hudHeightScale = 1.00F;
         RaidMineStaffMod.config().save();
     }
 
-    private static int scale(int value, float scale) { return Math.max(1, Math.round(value * scale)); }
+    private static int px(int value, float scale) {
+        return Math.max(1, Math.round(value * scale));
+    }
 
     private static String formatTime(long seconds) {
         long hours = seconds / 3600L;
         long minutes = (seconds % 3600L) / 60L;
         long secs = seconds % 60L;
-        return hours > 0 ? String.format("%02d:%02d:%02d", hours, minutes, secs) : String.format("%02d:%02d", minutes, secs);
+        return hours > 0 ? String.format("%02d:%02d:%02d", hours, minutes, secs)
+                : String.format("%02d:%02d", minutes, secs);
     }
 
     public enum Edge { MOVE, N, S, E, W, NE, NW, SE, SW }
-
     public record Handle(Edge edge, Rect rect) { }
 
-    public record Layout(int x, int y, int width, int height, float scale) {
+    public record Layout(int x, int y, int width, int height,
+                         float widthScale, float heightScale, float contentScale) {
         public boolean contains(double mouseX, double mouseY) {
             return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
         }
 
         public Handle[] handles() {
-            int size = Math.max(6, Math.round(7 * scale));
+            int size = Math.max(7, Math.round(8 * contentScale));
             int half = size / 2;
             int cx = x + width / 2;
             int cy = y + height / 2;
@@ -227,7 +318,11 @@ public final class HudOverlay {
         }
 
         public Edge edgeAt(double mouseX, double mouseY) {
-            for (Handle handle : handles()) if (handle.rect().contains(mouseX, mouseY)) return handle.edge();
+            if (editingSelected) {
+                for (Handle handle : handles()) {
+                    if (handle.rect().contains(mouseX, mouseY)) return handle.edge();
+                }
+            }
             return contains(mouseX, mouseY) ? Edge.MOVE : null;
         }
     }

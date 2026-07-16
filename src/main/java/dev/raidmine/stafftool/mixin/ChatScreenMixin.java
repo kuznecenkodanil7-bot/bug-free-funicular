@@ -1,10 +1,11 @@
 package dev.raidmine.stafftool.mixin;
 
-import dev.raidmine.stafftool.ui.ChatHoverRenderer;
 import dev.raidmine.stafftool.ui.PunishmentScreen;
 import dev.raidmine.stafftool.util.AuthManager;
-import dev.raidmine.stafftool.util.NicknameHitConsumer;
+import dev.raidmine.stafftool.util.ChatSelectionHelper;
+import dev.raidmine.stafftool.util.ChatRenderTracker;
 import dev.raidmine.stafftool.util.NicknameResolver;
+import dev.raidmine.stafftool.util.ScreenshotService;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -27,30 +28,36 @@ public abstract class ChatScreenMixin {
     )
     private void rmtools$openFromNickname(Click click, boolean doubled,
                                           CallbackInfoReturnable<Boolean> cir) {
-        if (!AuthManager.canUseMod()) return;
-        if (click.button() != 0) return;
+        if (!AuthManager.canUseMod() || click.button() != 0) return;
         MinecraftClient client = MinecraftClient.getInstance();
-        NicknameHitConsumer hitConsumer = findHit(client, (int) click.x(), (int) click.y());
-        Optional<String> nickname = hitConsumer.nickname();
-        if (nickname.isEmpty()) return;
+        Screen current = (Screen) (Object) this;
+        Optional<ChatSelectionHelper.Hit> hit = ChatRenderTracker.hasFreshFrame(current)
+                ? ChatRenderTracker.find(current, click.x(), click.y())
+                : ChatSelectionHelper.find(client, click.x(), click.y());
+        if (hit.isEmpty()) return;
 
-        Screen parent = (Screen) (Object) this;
-        client.setScreen(new PunishmentScreen(parent, nickname.get()));
+        client.setScreen(new PunishmentScreen(current, hit.get().nickname()));
         cir.setReturnValue(true);
+    }
+
+    @Inject(
+            method = "render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
+            at = @At("HEAD")
+    )
+    private void rmtools$beforeChatRendered(DrawContext context, int mouseX, int mouseY,
+                                             float delta, CallbackInfo ci) {
+        ChatRenderTracker.begin((Screen) (Object) this);
     }
 
     @Inject(
             method = "render(Lnet/minecraft/client/gui/DrawContext;IIF)V",
             at = @At("TAIL")
     )
-    private void rmtools$highlightHoveredNickname(DrawContext context, int mouseX, int mouseY,
-                                                   float delta, CallbackInfo ci) {
-        if (!AuthManager.canUseMod()) return;
-        MinecraftClient client = MinecraftClient.getInstance();
-        findHit(client, mouseX, mouseY).hit().ifPresent(hit -> {
-            context.setCursor(net.minecraft.client.gui.cursor.StandardCursors.POINTING_HAND);
-            ChatHoverRenderer.render(context, hit);
-        });
+    private void rmtools$afterChatRendered(DrawContext context, int mouseX, int mouseY,
+                                            float delta, CallbackInfo ci) {
+        Screen current = (Screen) (Object) this;
+        ChatRenderTracker.finish(current);
+        ScreenshotService.afterChatRendered();
     }
 
     @Inject(
@@ -71,18 +78,5 @@ public abstract class ChatScreenMixin {
             ci.cancel();
             return;
         }
-    }
-
-    private static NicknameHitConsumer findHit(MinecraftClient client, int mouseX, int mouseY) {
-        NicknameHitConsumer hitConsumer = new NicknameHitConsumer(client.textRenderer, mouseX, mouseY);
-        if (client.inGameHud != null) {
-            client.inGameHud.getChatHud().render(
-                    hitConsumer,
-                    client.getWindow().getScaledHeight(),
-                    client.inGameHud.getTicks(),
-                    true
-            );
-        }
-        return hitConsumer;
     }
 }

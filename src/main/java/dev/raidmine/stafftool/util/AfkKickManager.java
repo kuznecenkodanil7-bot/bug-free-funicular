@@ -59,6 +59,15 @@ public final class AfkKickManager {
         }
     }
 
+    public static long idleMillis() {
+        return Math.max(0L, System.currentTimeMillis() - lastActivityAt);
+    }
+
+    public static boolean isOnlineTimerPaused() {
+        int seconds = RaidMineStaffMod.config() == null ? 60 : RaidMineStaffMod.config().afkOnlinePauseSeconds;
+        return idleMillis() >= seconds * 1000L;
+    }
+
     public static long secondsUntilHub() {
         if (thresholdMillis <= 0L) return 0L;
         return Math.max(0L, (thresholdMillis - (System.currentTimeMillis() - lastActivityAt)) / 1000L);
@@ -106,8 +115,8 @@ public final class AfkKickManager {
     }
 
     private static void chooseThreshold() {
-        int min = RaidMineStaffMod.config() == null ? 270 : RaidMineStaffMod.config().afkKickMinSeconds;
-        int max = RaidMineStaffMod.config() == null ? 290 : RaidMineStaffMod.config().afkKickMaxSeconds;
+        int min = RaidMineStaffMod.config() == null ? 240 : RaidMineStaffMod.config().afkKickMinSeconds;
+        int max = RaidMineStaffMod.config() == null ? 240 : RaidMineStaffMod.config().afkKickMaxSeconds;
         int selected = min >= max ? min : ThreadLocalRandom.current().nextInt(min, max + 1);
         thresholdMillis = selected * 1000L;
     }

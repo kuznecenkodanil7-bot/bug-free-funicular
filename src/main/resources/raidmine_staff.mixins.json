@@ -4,11 +4,14 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "ChatHudMixin",
+    "ChatHudAccessor",
     "ChatScreenMixin",
     "ClientPlayNetworkHandlerMixin",
+    "DrawContextMixin",
     "InGameHudMixin",
     "KeyboardMixin",
-    "MinecraftClientMixin"
+    "MinecraftClientMixin",
+    "MouseMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -27,8 +27,8 @@ public final class UiTheme {
     public static final float FONT_TITLE = 16.0F;
 
     private static final Identifier LOGO = Identifier.of(RaidMineStaffMod.MOD_ID, "textures/gui/rm_logo.png");
-    private static final int LOGO_WIDTH = 4096;
-    private static final int LOGO_HEIGHT = 3370;
+    private static final int LOGO_WIDTH = 1024;
+    private static final int LOGO_HEIGHT = 1024;
 
     private UiTheme() {
     }
@@ -39,6 +39,20 @@ public final class UiTheme {
 
     public static int accent2() {
         return RaidMineStaffMod.config() == null ? 0xFFFF5A00 : RaidMineStaffMod.config().accentColorSecondary;
+    }
+
+    public static float backgroundOpacity() {
+        return RaidMineStaffMod.config() == null ? 0.92F : RaidMineStaffMod.config().uiBackgroundOpacity;
+    }
+
+    public static int surface(int color) {
+        int alpha = channel(color, 24);
+        int red = channel(color, 16);
+        int green = channel(color, 8);
+        int blue = channel(color, 0);
+        boolean darkSurface = red < 105 && green < 110 && blue < 130;
+        if (!darkSurface) return color;
+        return withAlpha(color, Math.max(0, Math.round(alpha * backgroundOpacity())));
     }
 
     public static int argb(int a, int r, int g, int b) {
@@ -78,7 +92,16 @@ public final class UiTheme {
     }
 
     public static void roundedRect(DrawContext context, int x, int y, int width, int height, int radius, int color) {
-        if (width <= 0 || height <= 0) return;
+        roundedRectInternal(context, x, y, width, height, radius, surface(color));
+    }
+
+    /** Draws a color with its exact alpha, bypassing the global background opacity. */
+    public static void roundedRectExact(DrawContext context, int x, int y, int width, int height, int radius, int color) {
+        roundedRectInternal(context, x, y, width, height, radius, color);
+    }
+
+    private static void roundedRectInternal(DrawContext context, int x, int y, int width, int height, int radius, int color) {
+        if (width <= 0 || height <= 0 || ((color >>> 24) & 0xFF) == 0) return;
         if (SmoothAssets.ensureInitialized()) {
             SmoothAssets.roundedRect(context, x, y, width, height, radius, color);
             return;
@@ -93,8 +116,16 @@ public final class UiTheme {
     }
 
     public static void outline(DrawContext context, int x, int y, int width, int height, int radius, int color) {
-        roundedRect(context, x, y, width, height, radius, color);
-        roundedRect(context, x + 1, y + 1, width - 2, height - 2, Math.max(0, radius - 1), PANEL_2);
+        roundedBorder(context, x, y, width, height, radius, 1, color, PANEL_2);
+    }
+
+    public static void roundedBorder(DrawContext context, int x, int y, int width, int height,
+                                     int radius, int thickness, int borderColor, int innerColor) {
+        thickness = Math.max(1, Math.min(thickness, Math.min(width, height) / 3));
+        roundedRectExact(context, x, y, width, height, radius, borderColor);
+        roundedRect(context, x + thickness, y + thickness,
+                width - thickness * 2, height - thickness * 2,
+                Math.max(0, radius - thickness), innerColor);
     }
 
     public static void logo(DrawContext context, int x, int y, int width, int height, int alpha) {
@@ -145,6 +176,14 @@ public final class UiTheme {
         logo(context, x, y, width, height, 255);
     }
 
+    public static void brandText(DrawContext context, String value, int x, int y, float size, int color) {
+        SmoothAssets.drawBrandText(context, value, x, y, size, color);
+    }
+
+    public static int brandTextWidth(String value, float size) {
+        return SmoothAssets.brandTextWidth(value, size);
+    }
+
     public static void text(DrawContext context, TextRenderer renderer, String value, int x, int y, int color) {
         text(context, renderer, value, x, y, FONT_SIZE, color, false);
     }
@@ -167,6 +206,16 @@ public final class UiTheme {
 
     public static void text(DrawContext context, TextRenderer renderer, String value, int x, int y,
                             float size, int color, boolean bold) {
+        if (usesMinecraftFont() && renderer != null) {
+            float scale = Math.max(0.45F, size / 9.0F);
+            context.getMatrices().pushMatrix();
+            context.getMatrices().translate(x, y);
+            context.getMatrices().scale(scale, scale);
+            Text text = Text.literal(value).styled(style -> style.withBold(bold));
+            context.drawText(renderer, text, 0, 0, color, false);
+            context.getMatrices().popMatrix();
+            return;
+        }
         if (SmoothAssets.ensureInitialized()) {
             SmoothAssets.drawText(context, value, x, y, size, color, bold);
         } else {
@@ -179,9 +228,17 @@ public final class UiTheme {
     }
 
     public static int textWidth(String value, float size, boolean bold) {
-        if (SmoothAssets.ensureInitialized()) return SmoothAssets.textWidth(value, size, bold);
         TextRenderer renderer = net.minecraft.client.MinecraftClient.getInstance().textRenderer;
+        if (usesMinecraftFont() && renderer != null) {
+            return Math.max(0, Math.round(renderer.getWidth(value) * Math.max(0.45F, size / 9.0F)));
+        }
+        if (SmoothAssets.ensureInitialized()) return SmoothAssets.textWidth(value, size, bold);
         return renderer == null ? 0 : renderer.getWidth(value);
+    }
+
+    private static boolean usesMinecraftFont() {
+        return RaidMineStaffMod.config() != null
+                && "MINECRAFT".equalsIgnoreCase(RaidMineStaffMod.config().fontFamily);
     }
 
     public static String ellipsize(TextRenderer renderer, String value, int maxWidth) {

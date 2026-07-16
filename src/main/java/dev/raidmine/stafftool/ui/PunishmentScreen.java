@@ -66,7 +66,8 @@ public final class PunishmentScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fillGradient(0, 0, width, height,
-                UiTheme.argb(220, 7, 10, 19), UiTheme.argb(236, 12, 15, 28));
+                UiTheme.surface(UiTheme.argb(220, 7, 10, 19)),
+                UiTheme.surface(UiTheme.argb(236, 12, 15, 28)));
 
         float openProgress = UiTheme.easeOutCubic((System.currentTimeMillis() - openedAt) / 280F);
         Layout base = layout();
@@ -74,10 +75,13 @@ public final class PunishmentScreen extends Screen {
         Layout layout = base.withPanelY(animatedY);
 
         UiTheme.shadow(context, layout.panelX(), layout.panelY(), layout.panelWidth(), layout.panelHeight(), 18);
-        UiTheme.roundedRect(context, layout.panelX(), layout.panelY(), layout.panelWidth(), layout.panelHeight(), 18, UiTheme.BG);
-        context.fillGradient(layout.panelX() + 1, layout.panelY() + 1,
-                layout.panelX() + layout.panelWidth() - 1, layout.panelY() + 4,
-                UiTheme.accent(), UiTheme.accent2());
+        int outlineAlpha = Math.round(255F * RaidMineStaffMod.config().uiOutlineOpacity);
+        if (outlineAlpha > 0) {
+            UiTheme.roundedBorder(context, layout.panelX(), layout.panelY(), layout.panelWidth(), layout.panelHeight(),
+                    18, 2, UiTheme.withAlpha(UiTheme.accent(), outlineAlpha), UiTheme.BG);
+        } else {
+            UiTheme.roundedRect(context, layout.panelX(), layout.panelY(), layout.panelWidth(), layout.panelHeight(), 18, UiTheme.BG);
+        }
 
         renderSidebar(context, layout, mouseX, mouseY);
         renderHeader(context, layout);
@@ -102,10 +106,9 @@ public final class PunishmentScreen extends Screen {
         UiTheme.roundedRect(context, x, y, l.sidebarWidth(), l.panelHeight(), 18, UiTheme.PANEL);
         context.fill(x + l.sidebarWidth() - 1, y + 18, x + l.sidebarWidth(), y + l.panelHeight() - 18, UiTheme.BORDER);
 
-        UiTheme.glow(context, x + 17, y + 18, 38, 35, 12, UiTheme.accent());
-        UiTheme.logoGlow(context, x + 17, y + 18, 40, 34);
-        UiTheme.textBold(context, textRenderer, "RM Tools", x + 64, y + 24, UiTheme.TEXT);
-        UiTheme.textSmall(context, textRenderer, "MODERATION SUITE", x + 64, y + 40, UiTheme.FAINT);
+        UiTheme.logo(context, x + 17, y + 18, 40, 34, 255);
+        UiTheme.brandText(context, "RaidMine", x + 64, y + 22, 10.4F, UiTheme.TEXT);
+        UiTheme.brandText(context, "Tools", x + 64, y + 38, 9.2F, UiTheme.MUTED);
 
         int itemY = y + 92;
         for (RuleCategory candidate : RuleCategory.values()) {
@@ -178,16 +181,16 @@ public final class PunishmentScreen extends Screen {
             }
             UiTheme.roundedRect(context, x + 12, y + 12, 36, 20, 7,
                     selected ? UiTheme.withAlpha(UiTheme.accent(), 120) : UiTheme.argb(140, 55, 64, 86));
-            UiTheme.text(context, textRenderer, rule.code(), x + 20, y + 18,
-                    selected ? UiTheme.TEXT : UiTheme.MUTED);
+            UiTheme.text(context, textRenderer, rule.code(), x + 20, y + 18, 9.2F,
+                    selected ? UiTheme.TEXT : UiTheme.MUTED, true);
             UiTheme.text(context, textRenderer,
                     UiTheme.ellipsize(textRenderer, rule.title(), cardW - 66),
-                    x + 57, y + 17, UiTheme.TEXT);
+                    x + 57, y + 17, 9.4F, UiTheme.TEXT, true);
             UiTheme.text(context, textRenderer,
                     UiTheme.ellipsize(textRenderer, rule.description(), cardW - 24),
-                    x + 12, y + 42, UiTheme.MUTED);
+                    x + 12, y + 42, 8.5F, UiTheme.MUTED, false);
             UiTheme.text(context, textRenderer,
-                    rule.options().size() + " вариант(а)", x + 12, y + cardH - 16, UiTheme.FAINT);
+                    rule.options().size() + " вариант(а)", x + 12, y + cardH - 16, 8.2F, UiTheme.FAINT, false);
         }
 
         int pagerY = l.panelY() + l.panelHeight() - 42;
@@ -526,8 +529,9 @@ public final class PunishmentScreen extends Screen {
         if (result.success()) {
             dev.raidmine.stafftool.chat.UiNotificationCenter.info("Наказание выдано", player + " • " + ruleCode);
             MinecraftClient client = MinecraftClient.getInstance();
-            client.setScreen(parent);
-            client.execute(() -> dev.raidmine.stafftool.util.ScreenshotService.capture(player, ruleCode));
+            Screen evidenceScreen = dev.raidmine.stafftool.util.ScreenshotService.evidenceScreen(parent);
+            dev.raidmine.stafftool.util.ScreenshotService.requestAfterChatRender(player, ruleCode, evidenceScreen);
+            client.setScreen(evidenceScreen);
         }
     }
 
@@ -609,7 +613,7 @@ public final class PunishmentScreen extends Screen {
             if (i == maxLines - 1 && lines.size() > maxLines) {
                 line = UiTheme.ellipsize(textRenderer, line + "…", maxWidth);
             }
-            UiTheme.text(context, textRenderer, line, x, y + i * 13, color);
+            UiTheme.text(context, textRenderer, line, x, y + i * 12, 9.0F, color, false);
         }
     }
 
